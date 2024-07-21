@@ -113,7 +113,7 @@ impl SystemFonts {
         let key = key.into();
         let text = key.script().sample()?;
         let locale = key.locale();
-        let family_name = self.dwrite_fonts.map_chars(text, locale)?;
+        let family_name = self.dwrite_fonts.family_name_for_text(text, locale)?;
         self.name_map.get(&family_name).map(|name| name.id())
     }
 }
@@ -128,8 +128,8 @@ impl FontInfo {
 }
 
 struct DWriteSystemFonts {
-    pub collection: IDWriteFontCollection,
-    pub fallback: IDWriteFontFallback,
+    collection: IDWriteFontCollection,
+    fallback: IDWriteFontFallback,
     map_buf: Vec<u16>,
 }
 
@@ -157,7 +157,7 @@ impl DWriteSystemFonts {
             self.collection
                 .GetFontFamily(index)
                 .ok()
-                .map(|family| DWriteFontFamily(family))
+                .map(DWriteFontFamily)
         }
     }
 
@@ -179,15 +179,11 @@ impl DWriteSystemFonts {
         let this = self.collection.clone();
         unsafe {
             let count = this.GetFontFamilyCount();
-            (0..count).filter_map(move |index| {
-                this.GetFontFamily(index)
-                    .ok()
-                    .map(|family| DWriteFontFamily(family))
-            })
+            (0..count).filter_map(move |index| this.GetFontFamily(index).ok().map(DWriteFontFamily))
         }
     }
 
-    fn map_chars(&mut self, text: &str, locale: Option<&str>) -> Option<String> {
+    fn family_name_for_text(&mut self, text: &str, locale: Option<&str>) -> Option<String> {
         self.map_buf.clear();
         self.map_buf.extend(text.encode_utf16());
         let text_len = self.map_buf.len();
@@ -334,7 +330,7 @@ impl IDWriteTextAnalysisSource_Impl for TextSource_Impl<'_> {
     ) -> windows::core::Result<()> {
         unsafe {
             *textlength = (self.text.len() as u32).saturating_sub(textposition);
-            *localename = core::mem::transmute(self.locale.as_ptr());
+            *localename = core::mem::transmute::<*const u16, *mut u16>(self.locale.as_ptr());
         }
         Ok(())
     }
@@ -365,7 +361,7 @@ impl IDWriteTextAnalysisSource_Impl for TextSource_Impl<'_> {
         unsafe {
             let text = self.text.get(textposition as usize..).unwrap_or_default();
             *textlength = text.len() as _;
-            *textstring = core::mem::transmute(text.as_ptr());
+            *textstring = core::mem::transmute::<*const u16, *mut u16>(text.as_ptr());
         }
         Ok(())
     }
@@ -379,7 +375,7 @@ impl IDWriteTextAnalysisSource_Impl for TextSource_Impl<'_> {
         unsafe {
             let text = self.text.get(..textposition as usize).unwrap_or_default();
             *textlength = text.len() as _;
-            *textstring = core::mem::transmute(text.as_ptr());
+            *textstring = core::mem::transmute::<*const u16, *mut u16>(text.as_ptr());
         }
         Ok(())
     }
